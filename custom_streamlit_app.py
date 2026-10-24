@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import uuid
@@ -7,7 +8,6 @@ import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-DB_FILE = "chats.json"
 DEFAULT_SYSTEM = "You are a helpful assistant."
 USER_AVATAR = ":material/person:"
 BOT_AVATAR = ":material/auto_awesome:"
@@ -175,6 +175,33 @@ st.markdown(
     }
     .stFormSubmitButton button:hover { background: #7c4dff !important; }
 
+    /* ---------- force light colors (works even if config.toml is missing) ---------- */
+    html, body, .stApp { color-scheme: light !important; }
+    .stApp, .stApp label, .stApp .stMarkdown, .stApp [data-testid="stMarkdownContainer"],
+    .stApp [data-testid="stWidgetLabel"] p, .stApp [data-testid="stCaptionContainer"] {
+        color: #1f1b2e;
+    }
+    [data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="textarea"],
+    [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea {
+        background: #ffffff !important;
+        color: #1f1b2e !important;
+        -webkit-text-fill-color: #1f1b2e !important;
+    }
+    [data-baseweb="input"] { border: 1px solid #ddd3fb !important; border-radius: 10px !important; }
+    input::placeholder, textarea::placeholder {
+        color: #9a94b0 !important; -webkit-text-fill-color: #9a94b0 !important;
+    }
+    [data-testid="stChatInput"], [data-testid="stChatInput"] > div,
+    [data-testid="stChatInput"] textarea {
+        background: #ffffff !important;
+        color: #1f1b2e !important;
+        -webkit-text-fill-color: #1f1b2e !important;
+    }
+    [data-testid="stExpander"] summary, [data-testid="stExpander"] summary * {
+        color: #1f1b2e !important;
+    }
+    [data-testid="stExpander"] details { background: transparent !important; }
+
     /* ---------- animations ---------- */
     @keyframes fadeUp {
         from { opacity: 0; transform: translateY(10px); }
@@ -247,10 +274,17 @@ st.markdown(
 
 
 # ---------- Storage (chats survive server restart) ----------
+def db_path():
+    # each API key gets its own chat file, so users never see each other's chats
+    digest = hashlib.sha256(st.session_state.api_key.encode()).hexdigest()[:16]
+    return f"chats_{digest}.json"
+
+
 def load_chats():
-    if os.path.exists(DB_FILE):
+    path = db_path()
+    if os.path.exists(path):
         try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
@@ -258,7 +292,7 @@ def load_chats():
 
 
 def save_chats():
-    with open(DB_FILE, "w", encoding="utf-8") as f:
+    with open(db_path(), "w", encoding="utf-8") as f:
         json.dump(st.session_state.chats, f, ensure_ascii=False, indent=2)
 
 
@@ -282,10 +316,9 @@ def sorted_chat_ids():
 
 # ---------- Session state ----------
 if "chats" not in st.session_state:
-    st.session_state.chats = load_chats()
+    st.session_state.chats = {}
 if "active" not in st.session_state:
-    ids = sorted_chat_ids()
-    st.session_state.active = ids[0] if ids else None
+    st.session_state.active = None
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
 if "user_name" not in st.session_state:
@@ -315,6 +348,9 @@ if not st.session_state.api_key:
                     OpenAI(api_key=key_in).models.list()
                 st.session_state.api_key = key_in
                 st.session_state.user_name = name_in.strip()
+                st.session_state.chats = load_chats()
+                ids = sorted_chat_ids()
+                st.session_state.active = ids[0] if ids else None
                 st.rerun()
             except Exception:
                 st.error("This API key doesn't look valid. Please check it and try again.")
@@ -381,6 +417,8 @@ with st.sidebar:
     if st.button("Logout", key="logout_btn", icon=":material/logout:"):
         st.session_state.api_key = ""
         st.session_state.user_name = ""
+        st.session_state.chats = {}
+        st.session_state.active = None
         st.rerun()
 
 # ---------- Main area ----------
